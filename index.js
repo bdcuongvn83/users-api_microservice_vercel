@@ -2,6 +2,10 @@ import express from "express";
 import shortid from "shortid";
 import cors from "cors";
 import bodyParser from "body-parser";
+import mongoose from "mongoose";
+import UserModel from "./models/user.js";
+import connectDB from "./database.js"; // Import hàm kết nối MongoDB
+import UserExcersizeModel from "./models/userexcersize.js";
 
 const app = express();
 
@@ -13,31 +17,41 @@ app.use(express.urlencoded({ extended: true }));
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
-// {
-//   username: "fcc_test",
-//   description: "test",
-//   duration: 60,
-//   date: "Mon Jan 01 1990",
-//   _id: "5fb5853f734231456ccb3b05"
-// }
+connectDB();
+
 const userDatabase = {}; // Lưu trữ các id và Object
 const userExcersize = []; // Lưu trữ các id và Excersize
 
 // POST: /api/users
-app.post("/api/users", (req, res) => {
-  const { username, _id } = req.body;
+app.post("/api/users", async (req, res) => {
+  try {
+    const { username } = req.body;
 
-  console.log(req.body); // Kiểm tra URL nhận được
+    console.log(req.body); // Kiểm tra URL nhận được
 
-  let user = User.fromBasicInfo(username, _id);
-  userDatabase[_id] = user;
+    const newUser = await createUser(username);
 
-  // Trả về JSON chứa user
-  return res.status(201).json(user);
+    // Trả về JSON chứa user
+    return res
+      .status(201)
+      .json({ username: newUser.username, _id: newUser._id.toString() }); // Trả về JSON chứa user
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: "Internal Server Error" });
+  }
 });
 
+const createUser = async (username) => {
+  await mongoose.connect("mongodb://localhost:27017/mydatabase");
+  const newUser = new UserModel({ username: username });
+  await newUser.save();
+
+  console.log(newUser); // Sẽ có _id tự động sinh ra
+  return newUser; // Trả về user đã tạo
+};
+
 class User {
-  constructor(username, _id) {
+  constructor(username, _id = "") {
     this.username = username;
     this._id = _id;
   }
@@ -63,44 +77,46 @@ class UserExcersize {
 }
 
 // post: exercises date YYYY-MM-DD
-app.post("/api/users/:_id/exercises", (req, res) => {
+app.post("/api/users/:_id/exercises", async (req, res) => {
   const { description, duration, date } = req.body;
   const { _id } = req.params;
 
   // Kiểm tra xem id có tồn tại trong map không
-  if (!userDatabase[_id]) {
-    return res.json({ error: "invalid _id" });
+  const user = await findUserById(_id);
+  if (!user) {
+    return res.json({ error: "invalid id" });
   }
+  try {
+    // Lấy user trong map and update
 
-  // Lấy user trong map and update
-  let user = userDatabase[_id];
-  let userDate = date ? new Date(date) : new Date();
-  if (userDate.toString() === "Invalid Date") {
-    return res.json({ error: "Invalid Date" });
+    let userDate = date ? new Date(date) : new Date();
+    if (userDate.toString() === "Invalid Date") {
+      return res.json({ error: "Invalid Date" });
+    }
+
+    const newExercise = new UserExcersizeModel({
+      userid: user._id, // Một ObjectId hợp lệ
+      description: description,
+      duration: Number(duration),
+      date: userDate, // Lưu ngày hiện tại
+    });
+
+    await newExercise.save();
+    console.log("Exercise saved:", newExercise);
+
+    let resultInfo = UserExcersize.fromFullInfo(
+      user.username,
+      user._id.toString(),
+      description,
+      duration,
+      userDate.toDateString()
+    );
+
+    return res.status(201).json(resultInfo);
+  } catch (error) {
+    console.error(error);
   }
-
-  let userExecersize = UserExcersize.fromFullInfo(
-    user.username,
-    user._id,
-    description,
-    duration,
-    userDate.toDateString()
-  );
-
-  userExcersize.push(userExecersize);
-
-  return res.status(201).json(userExecersize);
 });
-
-// const employees = [
-//   { empid: 1, empname: "Alice", age: 30, point: 80, date: "2024-04-02" },
-//   { empid: 2, empname: "Bob", age: 25, point: 90, date: "2024-03-30" },
-//   { empid: 3, empname: "Charlie", age: 35, point: 85, date: "2024-03-25" }
-// ];
-
-// const findEmpById = (id) => {
-//   return employees.find(emp => emp.empid === id);
-// };
 
 // result:
 // {
@@ -113,22 +129,24 @@ app.post("/api/users/:_id/exercises", (req, res) => {
 //     date: "Mon Jan 01 1990",
 //   }]
 // }
-app.get("/api/users/:_id/logs", (req, res) => {
+app.get("/api/users/:_id/logs", async (req, res) => {
   const { _id } = req.params;
 
   // Kiểm tra xem _id có tồn tại trong map không
-  if (!userDatabase[_id]) {
+  const user = await findUserById(_id);
+  if (!user) {
     return res.json({ error: "invalid id" });
   }
-  let user = userDatabase[_id];
+  //let user = userDatabase[_id];
   console.log("_id:" + _id);
-  let userExcersizeLst = userExcersize.filter((item) => item._id == _id);
-  console.log(`userExcersizeLst:${userExcersizeLst}`);
+  const result = await findUserExcersizeByUserId(_id);
 
-  let logLst = userExcersizeLst.map((item) => ({
+  console.log(`userExcersizeLst:${result}`);
+
+  let logLst = result.map((item) => ({
     description: item.description,
     duration: item.duration,
-    date: item.date,
+    date: item.date?.toDateString(), // Chuyển đổi ngày thành chuỗi
   }));
 
   return res.status(200).json({
@@ -139,25 +157,32 @@ app.get("/api/users/:_id/logs", (req, res) => {
   });
 });
 
-// GET: /api/shorturl/:short_url
-app.get("/api/shorturl/:short_url", (req, res) => {
-  const { short_url } = req.params;
-
-  // Kiểm tra xem short_url có tồn tại trong map không
-  if (!userDatabase[short_url]) {
-    return res.json({ error: "invalid url" });
-  }
-
-  // Lấy original_url từ map và thực hiện redirect
-  const originalUrl = userDatabase[short_url];
-  return res.redirect(originalUrl); // Chuyển hướng đến original URL
-});
-
 // Endpoint để xuất toàn bộ dữ liệu của urlDatabase
-app.get("/api/users", (req, res) => {
+app.get("/api/users", async (req, res) => {
   // Trả về toàn bộ dữ liệu của urlDatabase
-  return res.status(200).json(userDatabase);
+  await connectDB();
+  const users = await fetchUsers(); // Gọi hàm fetchUsers để lấy dữ liệu từ MongoDB
+  return res.status(200).json(users);
 });
+
+const fetchUsers = async () => {
+  //const UserModel = mongoose.model("User", new mongoose.Schema({}), "users"); // Kết nối tới collection `users`
+  return await UserModel.find(); // Lấy tất cả dữ liệu
+};
+
+const findUserById = async (id) => {
+  // Tìm kiếm người dùng theo id
+  const user = await UserModel.findById(id);
+
+  return user;
+};
+
+const findUserExcersizeByUserId = async (id) => {
+  // Tìm kiếm người dùng theo id
+  const userexcersizeLst = await UserExcersizeModel.find({ userid: id });
+
+  return userexcersizeLst;
+};
 
 // Chạy server trên cổng 3000
 const PORT = process.env.PORT || 3000;
