@@ -135,17 +135,34 @@ app.post("/api/users/:_id/exercises", async (req, res) => {
 //     date: "Mon Jan 01 1990",
 //   }]
 // }
+//param: from, to, limit
+// get: /api/users/:_id/logs?from=YYYY-MM-DD&to=YYYY-MM-DD&limit=10
 app.get("/api/users/:_id/logs", async (req, res) => {
   const { _id } = req.params;
+  const { from, to, limit } = req.query;
 
   // Kiểm tra xem _id có tồn tại trong map không
+  // Build the query for exercises
+  const query = { userid: _id };
+
+  // Adding a `$gte` filter
+  if (from) {
+    query.date = { ...query.date, $gte: new Date(from) };
+  }
+
+  // Adding a `$lte` filter
+  if (to) {
+    query.date = { ...query.date, $lte: new Date(to) };
+  }
+
   const user = await findUserById(_id);
   if (!user) {
     return res.json({ error: "invalid id" });
   }
   //let user = userDatabase[_id];
   console.log("_id:" + _id);
-  const result = await findUserExcersizeByUserId(_id);
+
+  const result = await findUserExcersizeByUserId(query, limit);
 
   console.log(`userExcersizeLst:${result}`);
 
@@ -183,10 +200,14 @@ const findUserById = async (id) => {
   return user;
 };
 
-const findUserExcersizeByUserId = async (id) => {
+const findUserExcersizeByUserId = async (query, limit) => {
   // Tìm kiếm người dùng theo id
-  const userexcersizeLst = await UserExcersizeModel.find({ userid: id });
-
+  const limitValue = Number(limit) || 0; // Giới hạn số lượng kết quả trả về là 10
+  console.log(`query:${JSON.stringify(query)}`);
+  const userexcersizeLst = await UserExcersizeModel.find(query).limit(
+    limitValue
+  );
+  // return [];
   return userexcersizeLst;
 };
 
