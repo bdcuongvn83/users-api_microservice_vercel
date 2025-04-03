@@ -42,7 +42,7 @@ app.post("/api/users", async (req, res) => {
 });
 
 const createUser = async (username) => {
-  await mongoose.connect("mongodb://localhost:27017/mydatabase");
+  //await mongoose.connect("mongodb://localhost:27017/mydatabase");
   const newUser = new UserModel({ username: username });
   await newUser.save();
 
