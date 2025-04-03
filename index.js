@@ -104,15 +104,21 @@ app.post("/api/users/:_id/exercises", async (req, res) => {
     await newExercise.save();
     console.log("Exercise saved:", newExercise);
 
-    let resultInfo = UserExcersize.fromFullInfo(
-      user.username,
-      user._id.toString(),
-      description,
-      duration,
-      userDate.toDateString()
-    );
+    // let resultInfo = UserExcersize.fromFullInfo(
+    //   user.username,
+    //   user._id.toString(),
+    //   description,
+    //   duration,
+    //   userDate.toDateString()
+    // );
 
-    return res.status(201).json(resultInfo);
+    return res.status(201).json({
+      username: user.username,
+      description: newExercise.description,
+      duration: newExercise.duration,
+      date: newExercise.date.toDateString(), // Format the date
+      _id: user._id,
+    });
   } catch (error) {
     console.error(error);
   }
